@@ -1,3 +1,5 @@
+process.traceDeprecation = true
+
 var webpack = require( "webpack" );
 var html = require( "html-webpack-plugin" );
 var merge = require( "webpack-merge" );

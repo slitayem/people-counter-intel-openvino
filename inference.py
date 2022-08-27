@@ -24,44 +24,136 @@
 
 import os
 import sys
+import time
 import logging as log
-from openvino.inference_engine import IENetwork, IECore
+
+from openvino.inference_engine import IECore
+import ngraph as ng
 
 
 class Network:
     """
-    Load and configure inference plugins for the specified target devices 
+    Load and configure inference plugins for the specified target devices
     and performs synchronous and asynchronous modes for the specified infer requests.
     """
 
     def __init__(self):
-        ### TODO: Initialize any class variables desired ###
+        self.plugin = None
+        self.network = None
+        self.input_blob = None
+        self.output_blob = None
+        self.exec_network = None
+        self.infer_request = None
+        self.device = None
+        self.batch_size = 1
+        self.infer_request_handle = None
 
-    def load_model(self):
-        ### TODO: Load the model ###
-        ### TODO: Check for supported layers ###
-        ### TODO: Add any necessary extensions ###
-        ### TODO: Return the loaded inference plugin ###
-        ### Note: You may need to update the function parameters. ###
-        return
+
+    def get_supported_layers(self):
+        """
+        Get list of supported layers of the loaded network
+        """
+        ng_function = ng.function_from_cnn(self.network)
+        return [node.get_friendly_name()
+                for node in ng_function.get_ordered_ops()]
+
+    def get_unsupported_layers(self):
+        """
+        Get the list of unsupported layers by the Network
+        """
+        supported_layers = (self.plugin.query_network(self.network, "CPU")).keys()
+
+        layers = self.get_supported_layers()
+        unsupported_layers = set(layers) - set(supported_layers)
+        return list(unsupported_layers)
+
+
+    def load_model(self, model, device="CPU", batch_size=1):
+        """
+        Load the model
+        :param model: Model IR file
+        :param device: device name
+        :param batch_size: Batch size
+        """
+        self.device = device
+        self.batch_size = batch_size
+
+        model_structure = model
+        model_weights = os.path.splitext(model)[0] + ".bin"
+
+        # Initialize the plugin
+        self.plugin = IECore()
+
+        # Read the IR as a IENetwork
+        log.info("Reading the IR ...")
+        self.network = self.plugin.read_network(model=model_structure, weights=model_weights)
+        self.network.batch_size = self.batch_size
+
+        # Load the IENetwork into the plugin
+        self.exec_network = self.plugin.load_network(network=self.network, device_name=self.device)
+
+        # Check the supported layers of the network
+        unsupported_layers = self.get_unsupported_layers()
+        if unsupported_layers:
+            str_layers = ', '.join(unsupported_layers)
+            log.error(f"Following layers are not supported by "
+                        "the plugin for the specified device {self.device}:\n {str_layers}")
+            sys.exit(1)
+
+        # Get the input layer
+        self.input_blob = next(iter(self.network.input_info))
+
+        self.output_blob = next(iter(self.network.outputs))
+        # log.info(f"INPUT {self.input_blob}")
+        # log.info(f"OUTPUT {self.output_blob}")
+        return self.network, self.get_input_shape()
+
 
     def get_input_shape(self):
-        ### TODO: Return the shape of the input layer ###
-        return
+        """ Return the shape of the input layer
+        """
+        # log.info(f"Input INFO {self.network.input_info}")
+        return self.network.input_info[
+            list(self.network.input_info.keys())[0]
+        ].input_data.shape
 
-    def exec_net(self):
-        ### TODO: Start an asynchronous request ###
-        ### TODO: Return any necessary information ###
-        ### Note: You may need to update the function parameters. ###
-        return
 
-    def wait(self):
-        ### TODO: Wait for the request to be complete. ###
-        ### TODO: Return any necessary information ###
-        ### Note: You may need to update the function parameters. ###
-        return
+    def exec_net(self, image, request_id=0):
+        """
+        Start an asynchronous inference request, given an input batch of images.
+        :param batch: the batch of images
+        :return : The handle of the asynchronous request
+        """
+        self.infer_request_handle = self.exec_network.start_async(
+            request_id=request_id, inputs={self.input_blob: image}
+        )
+        return self.infer_request_handle
 
-    def get_output(self):
-        ### TODO: Extract and return the output results
-        ### Note: You may need to update the function parameters. ###
-        return
+
+    def wait(self, timeout=-1, out_blob_name=None):
+        """
+        Wait for an asynchronous request
+        :return outputs:
+        A dictionary that maps output layer names to
+        numpy.ndarray objects with output data of the layer.
+        """
+        while self.infer_request_handle.wait(timeout=timeout) != 0:
+            log.info("Waiting for inference ...")
+            time.sleep(2)
+        return self.infer_request_handle.output_blobs[self.output_blob]
+
+
+    def get_output(self, out_blob_name=None, request_id=0):
+        """
+        Extract the output results
+        :param request_id: Index of the request value
+        :param output: Name of the output layer
+        :return
+           Inference request result
+        """
+        if out_blob_name:
+            return self.infer_request_handle.outputs[out_blob_name]
+
+        log.info(self.exec_network.requests[request_id].output_blobs)
+        return self.exec_network.requests[request_id].outputs[self.output_blob]
+

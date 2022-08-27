@@ -1,202 +1,176 @@
-# Deploy a People Counter App at the Edge
+OpenVino Toolkit - Deploy People counter App at the Edge
 
-| Details            |              |
+<img src="./media/person_detection_0.8.png"
+    caption="architectural diagram" width="500" class="center">
+
+| Details               |              |
 |-----------------------|---------------|
-| Programming Language: |  Python 3.5 or 3.6 |
+| Programming Language |  Python 3.8 |
+|Intel® Distribution of OpenVINO™ toolkit| v2021.4.752 |
 
-![people-counter-python](./images/people-counter-image.png)
 
-## What it Does
+<!-- TOC depthFrom:1 orderedList:true -->
+# Table of content
+- [What it does?](#what-it-does)
+- [What is OpenVINO™ Toolkit](#what-is-openvino-toolkit)
+- [How it works?](#how-it-works)
+- [Run the application](#running-the-code)
+- [Where to find the components logs?](#logs)
+- [Project writeup](./WRITEUP.md)
+- [How to check the MQTT published messages?](#how-to-check-the-mqtt-published-messages)
+- [Further readings](#reading)
 
-The people counter application will demonstrate how to create a smart video IoT solution using Intel® hardware and software tools. The app will detect people in a designated area, providing the number of people in the frame, average duration of people in frame, and total count.
 
-## How it Works
+<a name="#what-it-does"></a>
+# What it does?
+The people counter application demonstrates how to create a smart video IoT solution using `OpenVINO™ Toolkit`. The app detects people in a designated area, providing the number of people in the frame, average duration of people in frame, and the total count. It also saves a copy of the streamed output and detection results to the local storage device.
 
-The counter will use the Inference Engine included in the Intel® Distribution of OpenVINO™ Toolkit. The model used should be able to identify people in a video frame. The app should count the number of people in the current frame, the duration that a person is in the frame (time elapsed between entering and exiting a frame) and the total count of people. It then sends the data to a local web server using the Paho MQTT Python package.
+<a name="#how-it-works"></a>
+# How it works?
+The application consists of four components that need to run separately:
+-  MQTT Mosca server
+-  Node.js* Web server
+-  FFmpeg server (FFserver)
+-  Python backend application using OpenVINO™ Toolkit?
 
-You will choose a model to use and convert it with the Model Optimizer.
 
-![architectural diagram](./images/arch_diagram.png)
+<img src="./media/app_architecture.png"
+    caption="architectural diagram" width="600" class="center">
 
-## Requirements
+All the needed packages as well as the components are installed within a `Docker image`. That Docker image is using `Intel® Distribution of OpenVINO™ toolkit Docker image for Ubuntu* 20.04 LTS` as a base image.
 
-### Hardware
+<a name="#what-is-openvino-toolkit"></a>
+## What is OpenVINO™ Toolkit?
 
-* 6th to 10th generation Intel® Core™ processor with Iris® Pro graphics or Intel® HD Graphics.
-* OR use of Intel® Neural Compute Stick 2 (NCS2)
-* OR Udacity classroom workspace for the related course
+OpenVino is a `cross-platform` deep learning toolkit developed by Intel. The name stands for "Open Visual Inference and Neural Network Optimization". It focuses on optimizing neural network inference with a write-once, deploy-anywhere approach for Intel hardware platforms.
 
-### Software
+<a href="https://docs.openvinotoolkit.org/2021.4/index.html">
+    <img src="https://docs.openvino.ai/latest/_static/images/ov_chart.png" width="600">
+</a>
 
-*   Intel® Distribution of OpenVINO™ toolkit 2019 R3 release
-*   Node v6.17.1
-*   Npm v3.10.10
-*   CMake
-*   MQTT Mosca server
-  
-        
-## Setup
+<a name="#running-the-code"></a>
+# Run the application
 
-### Install Intel® Distribution of OpenVINO™ toolkit
+1. Build the Docker container
+In the top folder run the following command
 
-Utilize the classroom workspace, or refer to the relevant instructions for your operating system for this step.
+```bash
+ docker build --network=host -t demo .
+```
 
-- [Linux/Ubuntu](./linux-setup.md)
-- [Mac](./mac-setup.md)
-- [Windows](./windows-setup.md)
+**Note:** To configure the Docker image for GPU, you need to add thne build argument DEVICE as follows
 
-### Install Nodejs and its dependencies
+```bash
+ docker build --network=host --build-arg DEVICE=GPU -t demo .
+```
 
-Utilize the classroom workspace, or refer to the relevant instructions for your operating system for this step.
+1. Run the Docker container of the demo
+Start the container
 
-- [Linux/Ubuntu](./linux-setup.md)
-- [Mac](./mac-setup.md)
-- [Windows](./windows-setup.md)
+```bash
+docker run -dit --rm --name demo \
+    -p 3000:3000 -p 3002:3002 -p 3004:3004 demo
+```
+For code debugging you could attash a volume with the code to the container using
+```bash
+docker run -dit --rm --name demo  -v $PWD:/home/openvino/people-counter \
+    -p 3000:3000 -p 3002:3002 demo
+```
+Run a bash terminal inside the container
+```bash
+docker exec -it demo bash
+```
 
-### Install npm
+Then, to run the demo of the application execute the following command within the container bash
+```
+cd scripts && ./run_demo.sh
+```
+The web application will be then reachable via `http://localhost:3000/` after a few seconds of running the script
 
-There are three components that need to be running in separate terminals for this application to work:
+The settings of the demo can be changed by adapting the parameters passed to `main.py` in `run_demo.sh` script. The available options are listed below
 
--   MQTT Mosca server 
--   Node.js* Web server
--   FFmpeg server
-     
-From the main directory:
+```bash
+usage: main.py [-h] -m MODEL -i INPUT -n NAME -dt DATA_TYPE [-d DEVICE] [-pt PROB_THRESHOLD] [-db]
 
-* For MQTT/Mosca server:
-   ```
-   cd webservice/server
-   npm install
-   ```
-
-* For Web server:
+optional arguments:
+  -h, --help            show this help message and exit
+  -m MODEL, --model MODEL
+                        Path to an xml file with a trained model.
+  -i INPUT, --input INPUT
+                        Path to image or video file
+  -n NAME, --name NAME  Model name: needed for performance export.
+  -dt DATA_TYPE, --data_type DATA_TYPE
+                        Floating-point precision e.g. FP32
+  -d DEVICE, --device DEVICE
+                        Specify the target device to infer on: CPU, GPU, FPGA or MYRIAD is acceptable. Sample will look for a suitable plugin for device specified (CPU by default)
+  -pt PROB_THRESHOLD, --prob_threshold PROB_THRESHOLD
+                        Probability threshold for detections filtering(0.5 by default)
+  -db, --debug          Set to use the app in debug mode.(False by default)
   ```
-  cd ../ui
-  npm install
-  ```
-  **Note:** If any configuration errors occur in mosca server or Web server while using **npm install**, use the below commands:
-   ```
-   sudo npm install npm -g 
-   rm -rf node_modules
-   npm cache clean
-   npm config set registry "http://registry.npmjs.org"
-   npm install
-   ```
+## Model performance export
+The model performance (`.json` file) as well as a video capture of the demo (`.avi` file) are exported to the local folder `perf`. The format of the model performance file looks as below
 
-## What model to use
-
-It is up to you to decide on what model to use for the application. You need to find a model not already converted to Intermediate Representation format (i.e. not one of the Intel® Pre-Trained Models), convert it, and utilize the converted model in your application.
-
-Note that you may need to do additional processing of the output to handle incorrect detections, such as adjusting confidence threshold or accounting for 1-2 frames where the model fails to see a person already counted and would otherwise double count.
-
-**If you are otherwise unable to find a suitable model after attempting and successfully converting at least three other models**, you can document in your write-up what the models were, how you converted them, and why they failed, and then utilize any of the Intel® Pre-Trained Models that may perform better.
-
-## Run the application
-
-From the main directory:
-
-### Step 1 - Start the Mosca server
-
-```
-cd webservice/server/node-server
-node ./server.js
+```json
+{
+    "Model Name": "person-detection-retail-0013",
+    "People count": 30,
+    "AVG inference time (sec.)": 0.022,
+    "Completion Time (Sec.)": 137.503,
+    "Detection confidence threshold (%)": 80.0,
+    "Floating-point precision": "FP32"
+}
 ```
 
-You should see the following message, if successful:
-```
-Mosca server started.
-```
+# Run the app for various models
+ In order to run the application for various models and compare their performance, you execute the script `test_models.sh <DEVICE> <FLOATING_POINT_PRECISION>` located in the top folder of the project. That will execute the app for each of the models listed below and export the corresponding results inside the running container under the folder `/home/openvino/app-artifacts/perf`.
 
-### Step 2 - Start the GUI
+```bash
+Usage: ./test_models.sh <DEVICE> [Floating-point precision: FP16|FP32]
+ e.g: ./test_models.sh CPU FP16
+```
+<a name="#logs"></a>
+# Where to find the components logs?
 
-Open new terminal and run below commands.
-```
-cd webservice/ui
-npm run dev
-```
+The logs of each of the components are available under the folder `logs`
 
-You should see the following message in the terminal.
-```
-webpack: Compiled successfully
-```
-
-### Step 3 - FFmpeg Server
-
-Open new terminal and run the below commands.
-```
-sudo ffserver -f ./ffmpeg/server.conf
+```bash
+|____webservice-ui.err
+|____mqtt-server.err
+|____mqtt-server.out
+|____webservice-ui.out
+|____ffserver.err
+|____people_counter.log
+|____ffserver.out
 ```
 
-### Step 4 - Run the code
+<a name="#model"></a>
+# Model selection
+More details about the project and the model selection can be found [here](./WRITEUP.md)
 
-Open a new terminal to run the code. 
+<a name=#how-to-check-the-mqtt-published-messages></a>
+# How to check the MQTT published messages?
+To check the `MQTT published messages` you can use [mqtt-explorer](http://mqtt-explorer.com/) tool.
 
-#### Setup the environment
-
-You must configure the environment to use the Intel® Distribution of OpenVINO™ toolkit one time per session by running the following command:
+First, you need to run the following commands according to the Operating System you have.
+- For MacOS:
+```bash
+brew install --cask mqtt-explorer
 ```
-source /opt/intel/openvino/bin/setupvars.sh -pyver 3.5
+- For Ubuntu OS
+```bash
+sudo apt update
+sudo apt install snapd
+sudo snap install mqtt-explorer
 ```
+Note: Make sure to have the port number 3002 exposed withing the Docker image. That should also be mapped to the host port number 3002 when running the container `-p 3002:3002`
 
-You should also be able to run the application with Python 3.6, although newer versions of Python will not work with the app.
+In `mqtt-explorer` connect the client to `ws://localhost:3002`
 
-#### Running on the CPU
+<img src="media/mqtt_messages.png" width=700>
 
-When running Intel® Distribution of OpenVINO™ toolkit Python applications on the CPU, the CPU extension library is required. This can be found at: 
+<a name="#reading"></a>
+# Further readings
 
-```
-/opt/intel/openvino/deployment_tools/inference_engine/lib/intel64/
-```
-
-*Depending on whether you are using Linux or Mac, the filename will be either `libcpu_extension_sse4.so` or `libcpu_extension.dylib`, respectively.* (The Linux filename may be different if you are using a AVX architecture)
-
-Though by default application runs on CPU, this can also be explicitly specified by ```-d CPU``` command-line argument:
-
-```
-python main.py -i resources/Pedestrian_Detect_2_1_1.mp4 -m your-model.xml -d CPU -pt 0.6 | ffmpeg -v warning -f rawvideo -pixel_format bgr24 -video_size 768x432 -framerate 24 -i - http://0.0.0.0:3004/fac.ffm
-```
-If you are in the classroom workspace, use the “Open App” button to view the output. If working locally, to see the output on a web based interface, open the link [http://0.0.0.0:3004](http://0.0.0.0:3004/) in a browser.
-
-#### Running on the Intel® Neural Compute Stick
-
-To run on the Intel® Neural Compute Stick, use the ```-d MYRIAD``` command-line argument:
-
-```
-python3.5 main.py -d MYRIAD -i resources/Pedestrian_Detect_2_1_1.mp4 -m your-model.xml -pt 0.6 | ffmpeg -v warning -f rawvideo -pixel_format bgr24 -video_size 768x432 -framerate 24 -i - http://0.0.0.0:3004/fac.ffm
-```
-
-To see the output on a web based interface, open the link [http://0.0.0.0:3004](http://0.0.0.0:3004/) in a browser.
-
-**Note:** The Intel® Neural Compute Stick can only run FP16 models at this time. The model that is passed to the application, through the `-m <path_to_model>` command-line argument, must be of data type FP16.
-
-#### Using a camera stream instead of a video file
-
-To get the input video from the camera, use the `-i CAM` command-line argument. Specify the resolution of the camera using the `-video_size` command line argument.
-
-For example:
-```
-python main.py -i CAM -m your-model.xml -d CPU -pt 0.6 | ffmpeg -v warning -f rawvideo -pixel_format bgr24 -video_size 768x432 -framerate 24 -i - http://0.0.0.0:3004/fac.ffm
-```
-
-To see the output on a web based interface, open the link [http://0.0.0.0:3004](http://0.0.0.0:3004/) in a browser.
-
-**Note:**
-User has to give `-video_size` command line argument according to the input as it is used to specify the resolution of the video or image file.
-
-## A Note on Running Locally
-
-The servers herein are configured to utilize the Udacity classroom workspace. As such,
-to run on your local machine, you will need to change the below file:
-
-```
-webservice/ui/src/constants/constants.js
-```
-
-The `CAMERA_FEED_SERVER` and `MQTT_SERVER` both use the workspace configuration. 
-You can change each of these as follows:
-
-```
-CAMERA_FEED_SERVER: "http://localhost:3004"
-...
-MQTT_SERVER: "ws://localhost:3002"
-```
+- [Overview of the Intel® Distribution of OpenVINO™ Toolkit](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/overview.html)
+- [Using OpenVINO with OpenCV](https://learnopencv.com/?s=openvino&id=16719)
+- [ffserver](https://trac.ffmpeg.org/wiki/ffserver)

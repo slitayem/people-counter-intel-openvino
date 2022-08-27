@@ -25,6 +25,7 @@ OpenVino Toolkit - Deploy People counter App at the Edge
 # What it does?
 The people counter application demonstrates how to create a smart video IoT solution using `OpenVINO™ Toolkit`. The app detects people in a designated area, providing the number of people in the frame, average duration of people in frame, and the total count. It also saves a copy of the streamed output and detection results to the local storage device.
 
+A captured video of the people detection can be found [here](./media/FP16_CPU_person-detection-retail-0013.avi)
 <a name="#how-it-works"></a>
 # How it works?
 The application consists of four components that need to run separately:
@@ -74,7 +75,7 @@ docker run -dit --rm --name demo \
 For code debugging you could attash a volume with the code to the container using
 ```bash
 docker run -dit --rm --name demo  -v $PWD:/home/openvino/people-counter \
-    -p 3000:3000 -p 3002:3002 demo
+    -p 3000:3000 -p 3002:3002 -p 3004:3004 demo
 ```
 Run a bash terminal inside the container
 ```bash

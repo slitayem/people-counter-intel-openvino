@@ -82,6 +82,6 @@ loggers:
 
 root:
   level: INFO
-  handlers: [console, error_console, root_file_handler]
+  handlers: [root_file_handler]
   propagate: no
 
